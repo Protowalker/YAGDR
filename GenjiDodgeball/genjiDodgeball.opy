@@ -48,8 +48,8 @@ globalvar BallActive
 globalvar BallSpeed 
 globalvar BallBounceNormal
 
-
 #Player variables
+
 
 #!define isBlocking(player) ((player).isUsingAbility1() or (player).isUsingAbility2())
 
@@ -74,6 +74,7 @@ rule "Initialize Global":
     chase(BallSpeed, 9999, rate=0.5 if BallActive else 0, ChaseReeval.DESTINATION_AND_RATE)
     disableAnnouncer()
     disableGamemodeCompletion()
+    pauseMatchTime()
 
 
 rule "Initialize Player":
