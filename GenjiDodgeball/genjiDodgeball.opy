@@ -6,7 +6,6 @@ settings {
     "gamemodes": {
         "ffa": {
             "enabledMaps": [
-                "workshopIsland",
                 "workshopIslandNight"
             ]
         },
@@ -37,14 +36,17 @@ settings {
 
 #Global variables
 
-globalvar BallPosition 0
-globalvar TailJoint1 1
-globalvar TailJoint2 2
-globalvar BallDirection 3
-globalvar TargetedPlayer 4
-globalvar BallActive 5
-globalvar BallSpeed 6
-globalvar BallBounceNormal 12
+globalvar BallPosition 
+globalvar TailJoint1 
+globalvar TailJoint2 
+globalvar TailJoint3 
+globalvar TailJoint4 
+globalvar BallDirection 
+globalvar TargetedPlayer 
+globalvar LastTargetedPlayer 
+globalvar BallActive 
+globalvar BallSpeed 
+globalvar BallBounceNormal
 
 
 #Player variables
@@ -85,15 +87,13 @@ rule "Initialize Player":
     eventPlayer.disableScoreboard()
 
 
+#!define BALL_RADIUS 1.9
+
 rule "Create the ball and its tail":
-    createEffect(getAllPlayers(), Effect.ORB, Color.RED, updateEveryTick(BallPosition), 1, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
+    createEffect(updateEveryTick(TargetedPlayer), Effect.ORB, Color.RED, updateEveryTick(BallPosition), BALL_RADIUS, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
+    createEffect(updateEveryTick(getAllPlayers().exclude(TargetedPlayer)), Effect.ORB, Color.YELLOW, updateEveryTick(BallPosition), BALL_RADIUS, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
     createBeam(getAllPlayers(), Beam.BAD, updateEveryTick(BallPosition), updateEveryTick(TailJoint1), Color.YELLOW, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
     createBeam(getAllPlayers(), Beam.BAD, updateEveryTick(TailJoint1), updateEveryTick(TailJoint2), Color.YELLOW, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
-    #Chase ball at a rate equal to the current speed
-    chase(TailJoint1, BallPosition, rate=BallSpeed - 3, ChaseReeval.DESTINATION_AND_RATE)
-    chase(TailJoint2, TailJoint1, rate=BallSpeed - 6, ChaseReeval.DESTINATION_AND_RATE)
-    #chase(H, BallSpeed, rate=BallSpeed - 2, ChaseReeval.DESTINATION_AND_RATE)
-
 
 /*
 rule "Gameplay":
@@ -102,7 +102,7 @@ rule "Gameplay":
 rule "Round starting! Setup":
     @Condition BallActive == true
     
-    chase(BallPosition, BallPosition + BallDirection, rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
+    chase(BallPosition, BallPosition +  updateEveryTick(BallDirection), rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
     TargetedPlayer = random.choice(getLivingPlayers(Team.ALL))
     BallDirection = directionTowards(BallPosition, TargetedPlayer.getEyePosition())
 
@@ -113,11 +113,19 @@ rule "Shorten deflect":
     @Condition eventPlayer.isUsingAbility2() == true
     
     wait(0.3)
-    eventPlayer.cancelPrimaryAction()
+    eventPlayer.setAbility1Enabled(false)
     eventPlayer.setAbility2Enabled(false)
     wait(0.5)
+    eventPlayer.setAbility1Enabled(true)
     eventPlayer.setAbility2Enabled(true)
 
+rule "Update tail joints":
+    while true:
+        TailJoint4 = TailJoint3
+        TailJoint3 = TailJoint2
+        TailJoint2 = TailJoint1
+        TailJoint1 = BallPosition        
+        wait(0.064)
 
 rule "Dash Cooldown = 2.7":
     @Event eachPlayer
@@ -130,16 +138,16 @@ rule "Dash Cooldown = 2.7":
 
 
 rule "Ball reaches player, they miss":
-    @Condition updateEveryTick(distance(BallPosition, TargetedPlayer.getEyePosition())) <= 1
-    @Condition updateEveryTick(TargetedPlayer.IsBlocking) == false
+    @Condition updateEveryTick(distance(BallPosition, TargetedPlayer.getEyePosition())) <= BALL_RADIUS
+    @Condition TargetedPlayer.IsBlocking == false
     @Condition BallActive == true
     
-    kill(TargetedPlayer, null)
+    kill(TargetedPlayer, LastTargetedPlayer)
 
 
 rule "Player lands block - bounce":
-    @Condition updateEveryTick(distance(BallPosition, TargetedPlayer.getEyePosition())) <= 1
-    @Condition updateEveryTick(TargetedPlayer.IsBlocking) == true
+    @Condition updateEveryTick(distance(BallPosition, TargetedPlayer.getEyePosition())) <= BALL_RADIUS
+    @Condition TargetedPlayer.IsBlocking == true
     @Condition BallActive == true
     
     #cancel dash if they used it
@@ -147,14 +155,15 @@ rule "Player lands block - bounce":
         TargetedPlayer.setStatusEffect(null, Status.KNOCKED_DOWN, 1)
     BallDirection = TargetedPlayer.getFacingDirection()
     #get closest living player to reticle
+    LastTargetedPlayer = TargetedPlayer
     TargetedPlayer = sorted(getLivingPlayers(Team.ALL).exclude(TargetedPlayer), lambda i: angleBetweenVectors(TargetedPlayer.getFacingDirection(), directionTowards(TargetedPlayer.getEyePosition(), i.getEyePosition())))[0]
 
 
 rule "Ball bounces off wall or ground":
-    @Condition raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getHitPosition() != BallPosition + BallDirection
+    @Condition updateEveryTick(raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getHitPosition()) != BallPosition + BallDirection
     
     BallBounceNormal = raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getNormal()
-    BallDirection = BallDirection - 2 * BallBounceNormal * dotProduct(BallDirection, BallBounceNormal)
+    BallDirection = BallDirection - (2 * BallBounceNormal * dotProduct(BallDirection, BallBounceNormal))
 
 
 rule "Ball not active - restart":
@@ -162,6 +171,8 @@ rule "Ball not active - restart":
     
     stopChasingVariable(BallPosition)
     BallPosition = vect(0, 1.5, 0)
+    LastTargetedPlayer = null
+    TargetedPlayer = null
     TailJoint1 = BallPosition
     TailJoint2 = BallPosition
 
