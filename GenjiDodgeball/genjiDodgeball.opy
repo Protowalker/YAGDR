@@ -51,7 +51,7 @@ globalvar BallBounceNormal
 
 #Player variables
 
-playervar IsBlocking 0
+#!define isBlocking(player) ((player).isUsingAbility1() or (player).isUsingAbility2())
 
 
 /*
@@ -81,7 +81,6 @@ rule "Initialize Player":
     @Hero all
     @Condition eventPlayer.hasSpawned() == true
     
-    chase(eventPlayer.IsBlocking, updateEveryTick(eventPlayer.isUsingAbility1() or eventPlayer.isUsingAbility2()), rate=1000, ChaseReeval.DESTINATION_AND_RATE)
     eventPlayer.disableRespawn()
     eventPlayer.disableGamemodeHud()
     eventPlayer.disableScoreboard()
@@ -139,7 +138,7 @@ rule "Dash Cooldown = 2.7":
 
 rule "Ball reaches player, they miss":
     @Condition updateEveryTick(distance(BallPosition, TargetedPlayer.getEyePosition())) <= BALL_RADIUS
-    @Condition TargetedPlayer.IsBlocking == false
+    @Condition isBlocking(TargetedPlayer) == false
     @Condition BallActive == true
     
     kill(TargetedPlayer, LastTargetedPlayer)
@@ -147,7 +146,7 @@ rule "Ball reaches player, they miss":
 
 rule "Player lands block - bounce":
     @Condition updateEveryTick(distance(BallPosition, TargetedPlayer.getEyePosition())) <= BALL_RADIUS
-    @Condition TargetedPlayer.IsBlocking == true
+    @Condition isBlocking(TargetedPlayer) == true
     @Condition BallActive == true
     
     #cancel dash if they used it
@@ -190,6 +189,6 @@ rule "(Debug) toggle ballActive":
 
 
 rule "Debug HUDs":
-    hudHeader(hostPlayer, "isBlocking: {0}".format(updateEveryTick(hostPlayer.IsBlocking)), HudPosition.LEFT, 0, Color.WHITE, HudReeval.VISIBILITY_AND_STRING, SpecVisibility.DEFAULT)
+    hudHeader(hostPlayer, "isBlocking: {0}".format(updateEveryTick(isBlocking(hostPlayer))), HudPosition.LEFT, 0, Color.WHITE, HudReeval.VISIBILITY_AND_STRING, SpecVisibility.DEFAULT)
 
 
