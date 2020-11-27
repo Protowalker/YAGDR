@@ -51,8 +51,10 @@ globalvar StartingBallSpeed
 globalvar MaxBallSpeed
 globalvar BallAcceleration
 globalvar DeathEffects
+globalvar RoundCountdown
 #!define DeathBeam DeathEffects[0]
 #!define DeathSphere DeathEffects[1]
+#!define maxRoundCountdown 5
 
 
 #Player variables
@@ -89,7 +91,7 @@ rule "Initialize Global":
 	TailJoints = [BallPosition]
     BallDirection = vect(0, 0, 0)
     BallSpeed = StartingBallSpeed
-    chase(BallDirection, directionTowards(BallPosition, TargetedPlayer.getEyePosition()), rate=1.75, ChaseReeval.DESTINATION_AND_RATE)
+    #chase(BallDirection, directionTowards(BallPosition, TargetedPlayer.getEyePosition()), rate=1.75, ChaseReeval.DESTINATION_AND_RATE)
     chase(BallSpeed, MaxBallSpeed, rate=BallAcceleration if BallActive else 0, ChaseReeval.DESTINATION_AND_RATE)
     disableAnnouncer()
 	disableGamemodeCompletion()
@@ -116,6 +118,7 @@ rule "Initialize Player":
     eventPlayer.disableRespawn()
     eventPlayer.disableGamemodeHud()
     eventPlayer.disableScoreboard()
+    chase(eventPlayer.BouncePadCooldown, 0, rate=1, ChaseReeval.NONE)
 
 
 rule "Create player HUD elements":
@@ -141,6 +144,10 @@ rule "Create the ball and its tail":
 	for i in range(NumTailSegments-1):
 		createBeam(getAllPlayers(), Beam.BAD, TailJoints[evalOnce(i+1)], TailJoints[evalOnce(i+2)], Color.YELLOW, EffectReeval.VISIBILITY_POSITION_AND_RADIUS)
 
+rule "Create starter podium":
+    createInWorldText(null if BallActive else getAllPlayers(), RoundCountdown, vect(0, 2, 0), 4, Clip.NONE, WorldTextReeval.VISIBILITY_AND_STRING, Color.SKY_BLUE, SpecVisibility.DEFAULT)
+    createEffect(null if BallActive else getAllPlayers(), Effect.SPHERE, Color.SKY_BLUE, vect(0,0,0), 3.5, EffectReeval.VISIBILITY)
+
 /*
 rule "Gameplay":
 */
@@ -148,7 +155,7 @@ rule "Gameplay":
 rule "Round starting! Setup":
     @Condition BallActive == true
     
-    chase(BallPosition, BallPosition + updateEveryTick(BallDirection), rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
+    chase(BallPosition, updateEveryTick(BallPosition) + updateEveryTick(BallDirection), rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
     TargetedPlayer = random.choice(getLivingPlayers(Team.ALL))
     BallDirection = directionTowards(BallPosition, TargetedPlayer.getEyePosition())
 
@@ -211,6 +218,7 @@ rule "Ball bounces off wall or ground":
     @Condition updateEveryTick(raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getHitPosition()) != BallPosition + BallDirection
     
     BallBounceNormal = raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getNormal()
+	wait()
 	BallDirection = BallDirection - (2 * BallBounceNormal * dotProduct(BallDirection, BallBounceNormal))
 	wait()
 	if RULE_CONDITION: goto RULE_START
@@ -222,10 +230,49 @@ rule "Ball not active - restart":
     stopChasingVariable(BallPosition)
     BallPosition = vect(0, 1.5, 0)
     LastTargetedPlayer = null
-	TargetedPlayer = null
+    TargetedPlayer = random.choice(getAllPlayers())
 	TailJoints = [BallPosition for jointPos in TailJoints]
+    RoundCountdown = maxRoundCountdown
+    while RoundCountdown > 0:
+        wait(1)
+        RoundCountdown -= 1
+
+    BallActive = true
 
 
+rule "Player presses primary fire - use dash":
+    @Event eachPlayer
+    @Condition eventPlayer.isHoldingButton(Button.PRIMARY_FIRE) == true
+    eventPlayer.forceButtonPress(Button.ABILITY_1)
+
+rule "Player presses secondary fire - use deflect":
+    @Event eachPlayer
+    @Condition eventPlayer.isHoldingButton(Button.SECONDARY_FIRE) == true
+    eventPlayer.forceButtonPress(Button.ABILITY_2)
+
+
+/*
+Bouncepads
+*/
+
+globalvar Bouncepads
+
+rule "Create bouncepads":
+    Bouncepads = [vect(12, 0, 0), vect(-12, 0, 0), vect(0, 0, 12), vect(0, 0, -12)]
+    for i in range(0, len(Bouncepads)):
+        createEffect([elem for elem in getAllPlayers() if elem.BouncePadCooldown == 0], Effect.RING, Color.GREEN, evalOnce(Bouncepads[i]), 2, EffectReeval.VISIBILITY)
+        createEffect([elem for elem in getAllPlayers() if elem.BouncePadCooldown != 0], Effect.RING, Color.RED, evalOnce(Bouncepads[i]), 2, EffectReeval.VISIBILITY)
+
+#!define BouncepadMaxCooldown 3
+
+rule "Player Bounces":
+    @Event eachPlayer        
+    @Condition eventPlayer.hasSpawned()
+    @Condition eventPlayer.BouncePadCooldown == 0
+    @Condition any([distance(eventPlayer.getPosition(), elem) <= 2.75 for elem in Bouncepads])
+    @Condition eventPlayer.isHoldingButton(Button.JUMP)
+    eventPlayer.applyImpulse(vect(0,1,0), 30, Relativity.TO_WORLD, Impulse.CANCEL_CONTRARY_MOTION)
+    eventPlayer.BouncePadCooldown = BouncepadMaxCooldown 
 /*
 rule "Debug":
 */
@@ -240,13 +287,25 @@ rule "(Debug) toggle ballActive":
 
 
 rule "Debug HUDs":
-	@Disabled
-    hudHeader(hostPlayer, "isBlocking: {0}".format(updateEveryTick(isBlocking(hostPlayer))), HudPosition.LEFT, 0, Color.WHITE, HudReeval.VISIBILITY_AND_STRING, SpecVisibility.DEFAULT)
+    hudHeader(hostPlayer, "Server Load: {0}\nServer Load Peak: {1}\nServer Load Average: {2}".format(updateEveryTick(getServerLoad()), updateEveryTick(getPeakServerLoad()), updateEveryTick(getAverageServerLoad())), HudPosition.LEFT, 0, Color.WHITE, HudReeval.VISIBILITY_AND_STRING, SpecVisibility.DEFAULT)
+    hudHeader(hostPlayer, raycast(hostPlayer.getEyePosition(), hostPlayer.getEyePosition() + hostPlayer.getFacingDirection() * 10, null, null, false).getHitPosition(), HudPosition.RIGHT, 5, Color.WHITE, HudReeval.VISIBILITY_AND_STRING)
 
-	
+
+rule "lerp balldirection":
+    BallDirection = BallDirection + (directionTowards(BallPosition, TargetedPlayer.getEyePosition()) - BallDirection)*(1.75/31.25)
+    wait(0.016)
+    goto RULE_START
+
+globalvar testDummy
 rule "debug dummy":
 	wait(3)
-	createDummy(Hero.GENJI, Team.ALL, 1, null, null)
+	createDummy(Hero.GENJI, Team.ALL, -1, null, null)
+    testDummy = getLastCreatedEntity()
+    testDummy.startFacing(angleToDirection(1, 0), 25, Relativity.TO_PLAYER, FacingReeval.DIRECTION_AND_TURN_RATE)
+
+rule "ball close to dummy":
+    @Condition distance(testDummy.getEyePosition(), BallPosition) <= 3
+        testDummy.forceButtonPress(Button.ABILITY_2)
 
 
 def PlayDeathEffects():
