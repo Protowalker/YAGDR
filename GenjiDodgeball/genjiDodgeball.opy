@@ -131,7 +131,7 @@ rule "Initialize Global":
 	TailJoints = [BallPosition]
     BallDirection = vect(0, 0, 0)
     BallSpeed = StartingBallSpeed
-    chase(BallDirection, directionTowards(BallPosition, TargetedPlayer.getEyePosition()), rate=1.75, ChaseReeval.DESTINATION_AND_RATE)
+    chase(BallDirection, updateEveryTick(directionTowards(BallPosition, TargetedPlayer.getEyePosition())), rate=1.78, ChaseReeval.DESTINATION_AND_RATE)
     chase(BallSpeed, MaxBallSpeed, rate=BallAcceleration if BallActive else 0, ChaseReeval.DESTINATION_AND_RATE)
     disableAnnouncer()
 	disableGamemodeCompletion()
@@ -192,11 +192,11 @@ rule "Create starter podium":
 rule "Gameplay":
 */
 
+
 rule "Round starting! Setup":
     @Condition BallActive == true
     
-    chase(BallPosition, updateEveryTick(BallPosition) + updateEveryTick(BallDirection), rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
-    #TargetedPlayer = random.choice(getLivingPlayers(Team.ALL))
+    chase(BallPosition, updateEveryTick(BallPosition) + updateEveryTick(normalize(BallDirection)), rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
     BallDirection = directionTowards(BallPosition, TargetedPlayer.getEyePosition())
 
 
@@ -264,11 +264,25 @@ rule "Ball reaches player":
 		kill(TargetedPlayer, LastTargetedPlayer)
         if DeathEffectsEnabled:	async(PlayDeathEffects(), AsyncBehavior.NOOP)
 
+rule "Someone died - restart":
+        @Condition TargetedPlayer.isAlive() == false
+        if len(getLivingPlayers(Team.ALL)) == 1:
+            bigMessage(getAllPlayers(), "{0} wins the round!".format(getLivingPlayers(Team.ALL)[0]))
+            getAllPlayers().respawn()
+            BallActive = false
+            return
+        wait(0.016)
+        BallActive = false
+        wait(0.032)
+        RoundCountdown = 3
+        BallSpeed = StartingBallSpeed
+
+#!define ModifiedBallDirection (BallDirection*BALL_RADIUS*BallSpeed)
 
 rule "Ball bounces off wall or ground":
-    @Condition updateEveryTick(raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getHitPosition()) != BallPosition + BallDirection
+    @Condition updateEveryTick(raycast(BallPosition, BallPosition + ModifiedBallDirection*0.016, null, getAllPlayers(), false).getHitPosition()) != BallPosition + ModifiedBallDirection*0.016
     
-    BallBounceNormal = raycast(BallPosition, BallPosition + BallDirection, null, getAllPlayers(), false).getNormal()
+    BallBounceNormal = raycast(BallPosition, BallPosition + ModifiedBallDirection*0.016, null, getAllPlayers(), false).getNormal()
 	wait()
 	BallDirection = BallDirection - (2 * BallBounceNormal * dotProduct(BallDirection, BallBounceNormal))
 	wait()
@@ -281,7 +295,7 @@ rule "Ball not active - restart":
     stopChasingVariable(BallPosition)
     BallPosition = vect(0, 1.5, 0)
     LastTargetedPlayer = null
-    TargetedPlayer = random.choice(getAllPlayers())
+    TargetedPlayer = random.choice(getLivingPlayers(Team.ALL))
 	TailJoints = [BallPosition for jointPos in TailJoints]
     RoundCountdown = maxRoundCountdown
     while RoundCountdown > 0:
