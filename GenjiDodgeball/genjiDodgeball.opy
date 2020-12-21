@@ -126,12 +126,14 @@ rule "Get workshop settings":
     NumTailSegments          =     createWorkshopSetting(  int<0:8>,         "VFX",         "Number of Tail Segments",           2,     0)
     DeathEffectsEnabled      =     createWorkshopSetting( bool,              "VFX",         "Death Effects",                     true,  1)
 
+globalvar directionRate
+
 rule "Initialize Global":
     BallPosition = vect(0, 1.5, 0)
 	TailJoints = [BallPosition]
     BallDirection = vect(0, 0, 0)
     BallSpeed = StartingBallSpeed
-    chase(BallDirection, updateEveryTick(directionTowards(BallPosition, TargetedPlayer.getEyePosition())), rate=1.78, ChaseReeval.DESTINATION_AND_RATE)
+    chase(BallDirection, updateEveryTick(directionTowards(BallPosition, TargetedPlayer.getEyePosition())), rate=directionRate, ChaseReeval.DESTINATION_AND_RATE)
     chase(BallSpeed, MaxBallSpeed, rate=BallAcceleration if BallActive else 0, ChaseReeval.DESTINATION_AND_RATE)
     disableAnnouncer()
 	disableGamemodeCompletion()
@@ -195,7 +197,7 @@ rule "Gameplay":
 
 rule "Round starting! Setup":
     @Condition BallActive == true
-    
+    directionRate = 1.75    
     chase(BallPosition, updateEveryTick(BallPosition) + updateEveryTick(normalize(BallDirection)), rate=BallSpeed, ChaseReeval.DESTINATION_AND_RATE)
     BallDirection = directionTowards(BallPosition, TargetedPlayer.getEyePosition())
 
@@ -283,9 +285,11 @@ rule "Ball bounces off wall or ground":
     @Condition updateEveryTick(raycast(BallPosition, BallPosition + ModifiedBallDirection*0.016, null, getAllPlayers(), false).getHitPosition()) != BallPosition + ModifiedBallDirection*0.016
     
     BallBounceNormal = raycast(BallPosition, BallPosition + ModifiedBallDirection*0.016, null, getAllPlayers(), false).getNormal()
-	wait()
-	BallDirection = BallDirection - (2 * BallBounceNormal * dotProduct(BallDirection, BallBounceNormal))
-	wait()
+    BallDirection = BallDirection - (2 * BallBounceNormal * dotProduct(BallDirection, BallBounceNormal))
+    wait()
+    directionRate = 0
+    wait(0.1)
+    directionRate=1.75
 	if RULE_CONDITION: goto RULE_START
 
 
